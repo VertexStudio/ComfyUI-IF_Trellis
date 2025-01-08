@@ -55,6 +55,7 @@ class IF_TrellisImageTo3D:
                 "multimode": (["stochastic", "multidiffusion"], {"default": "stochastic"}),
                 "project_name": ("STRING", {"default": "trellis_output"}),
                 "save_glb": ("BOOLEAN", {"default": True, "tooltip": "Save the GLB file this is the 3D model"}),
+                "save_obj": ("BOOLEAN", {"default": True, "tooltip": "Save the OBJ file this is the 3D model"}),
                 "render_video": ("BOOLEAN", {"default": False, "tooltip": "Render a video"}),
                 "save_gaussian": ("BOOLEAN", {"default": False, "tooltip": "Save the Gaussian file this is a ply file of the 3D model"}),
                 "save_texture": ("BOOLEAN", {"default": False, "tooltip": "Save the texture file"}),
@@ -173,7 +174,7 @@ class IF_TrellisImageTo3D:
         )
         return gaussian, mesh
 
-    def generate_outputs(self, outputs, project_name, fps=15, render_video=True, save_glb=True):
+    def generate_outputs(self, outputs, project_name, fps=15, render_video=True, save_glb=True, save_obj=True):
         out_dir = os.path.join(self.output_dir, project_name)
         os.makedirs(out_dir, exist_ok=True)
 
@@ -291,6 +292,7 @@ class IF_TrellisImageTo3D:
         project_name: str,
         render_video: bool,
         save_glb: bool,
+        save_obj: bool,
         save_gaussian: bool,
         save_texture: bool,
         save_wireframe: bool,
@@ -332,7 +334,8 @@ class IF_TrellisImageTo3D:
                     project_name,
                     fps,
                     render_video=render_video,
-                    save_glb=save_glb
+                    save_glb=save_glb,
+                    save_obj=save_obj,
                 )
 
                 if save_gaussian:
