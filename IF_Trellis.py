@@ -55,11 +55,11 @@ class IF_TrellisImageTo3D:
                 "multimode": (["stochastic", "multidiffusion"], {"default": "stochastic"}),
                 "project_name": ("STRING", {"default": "trellis_output"}),
                 "save_glb": ("BOOLEAN", {"default": True, "tooltip": "Save the GLB file this is the 3D model"}),
-                "save_obj": ("BOOLEAN", {"default": True, "tooltip": "Save the OBJ file this is the 3D model"}),
                 "render_video": ("BOOLEAN", {"default": False, "tooltip": "Render a video"}),
                 "save_gaussian": ("BOOLEAN", {"default": False, "tooltip": "Save the Gaussian file this is a ply file of the 3D model"}),
                 "save_texture": ("BOOLEAN", {"default": False, "tooltip": "Save the texture file"}),
                 "save_wireframe": ("BOOLEAN", {"default": False, "tooltip": "Save the wireframe file"}),
+                "save_obj": ("BOOLEAN", {"default": True, "tooltip": "Save the OBJ file this is the 3D model"}),
             },
             "optional": {
                 "masks": ("MASK", {"list": True}),
