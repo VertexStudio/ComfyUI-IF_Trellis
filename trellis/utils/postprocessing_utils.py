@@ -680,7 +680,6 @@ def simplify_gs(
     return new_gs
 
 def save_obj(
-    self,
     app_rep: Union[Strivec, Gaussian],
     mesh: MeshExtractResult,
     out_dir: str,

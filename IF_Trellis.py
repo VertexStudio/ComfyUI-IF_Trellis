@@ -240,7 +240,21 @@ class IF_TrellisImageTo3D:
                 wireframe_image = None
 
         if save_obj:
-            obj_path = self.save_obj()
+            texture_path = os.path.join(out_dir, f"{project_name}_texture.png") if self.save_texture else None
+            logging.info(f"Saving OBJ file with texture: {texture_path}")
+            obj_path = postprocessing_utils.save_obj(
+                gaussian_output,
+                mesh_output,
+                out_dir,
+                project_name,
+                simplify=self.mesh_simplify,
+                fill_holes=True,
+                texture_size=self.texture_size,
+                texture_mode=self.texture_mode,
+                save_texture=self.save_texture and self.texture_mode != 'blank',
+                texture_path=texture_path,
+                verbose=True
+            )
 
         # Clean up the large tensors after we're done using them
         del gaussian_output
