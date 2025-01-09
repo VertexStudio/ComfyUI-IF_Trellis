@@ -555,6 +555,8 @@ def to_glb(
     )
     return tri_mesh
 
+
+
 def simplify_gs(
     gs: Gaussian,
     simplify: float = 0.95,
@@ -676,3 +678,139 @@ def simplify_gs(
     new_gs._opacity = new_gs._opacity.data
     
     return new_gs
+
+def save_obj(
+    self,
+    app_rep: Union[Strivec, Gaussian],
+    mesh: MeshExtractResult,
+    out_dir: str,
+    project_name: str,
+    simplify: float = 0.95,
+    fill_holes: bool = True,
+    fill_holes_max_size: float = 0.04,
+    texture_size: int = 1024,
+    texture_mode: Literal['fast', 'opt', 'blank'] = 'opt',
+    save_texture: bool = False,
+    debug: bool = False,
+    verbose: bool = True,
+) -> str:
+    """
+    Convert and save the generated asset as OBJ with material and texture files.
+    
+    Returns:
+        str: Path to the saved OBJ file relative to output directory
+    """
+    # Set up output paths
+    obj_path = os.path.join(out_dir, f"{project_name}.obj")
+    mtl_path = os.path.join(out_dir, f"{project_name}.mtl")
+    texture_path = os.path.join(out_dir, f"{project_name}_texture.png")
+
+    # Convert geometry to numpy
+    vertices = mesh.vertices.cpu().numpy()
+    faces = mesh.faces.cpu().numpy()
+    
+    # Postprocess geometry using the same function as in to_glb
+    vertices, faces = postprocess_mesh(
+        vertices, faces,
+        simplify=simplify > 0,
+        simplify_ratio=simplify,
+        fill_holes=fill_holes,
+        fill_holes_max_hole_size=fill_holes_max_size,
+        fill_holes_max_hole_nbe=int(250 * np.sqrt(1 - simplify)),
+        fill_holes_resolution=1024,
+        fill_holes_num_views=1000,
+        debug=debug,
+        verbose=verbose,
+    )
+
+    # UV parameterization
+    vertices, faces, uvs = parametrize_mesh(vertices, faces)
+
+    # Generate texture if not "blank"
+    if texture_mode != 'blank' and save_texture:
+        observations, extrinsics, intrinsics = render_multiview(
+            app_rep, resolution=1024, nviews=100
+        )
+        masks = [np.any(obs > 0, axis=-1) for obs in observations]
+        extrinsics_np = [extrinsics[i].cpu().numpy() for i in range(len(extrinsics))]
+        intrinsics_np = [intrinsics[i].cpu().numpy() for i in range(len(intrinsics))]
+        texture_np = bake_texture(
+            vertices, faces, uvs,
+            observations, masks,
+            extrinsics_np, intrinsics_np,
+            texture_size=texture_size,
+            mode=texture_mode,
+            lambda_tv=0.01,
+            verbose=verbose
+        )
+
+        if texture_np is None:
+            texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
+        else:
+            # Ensure correct shape/dtype
+            if texture_np.ndim == 3 and texture_np.shape[2] in [3, 4]:
+                texture_np = texture_np[..., :3].astype(np.uint8)  # Convert to RGB if RGBA
+            elif texture_np.ndim == 2:
+                texture_np = np.stack([texture_np]*3, axis=-1).astype(np.uint8)
+            elif texture_np.ndim == 3 and texture_np.shape[2] == 1:
+                texture_np = np.concatenate([texture_np]*3, axis=2).astype(np.uint8)
+            else:
+                logging.error(f"Unexpected texture shape: {texture_np.shape}")
+                texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
+
+        # Save texture
+        if save_texture:
+            Image.fromarray(texture_np).save(texture_path)
+
+    # Rotate from z-up to y-up (same as in to_glb)
+    vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+
+    # Write MTL file
+    with open(mtl_path, 'w') as f:
+        f.write("newmtl material0\n")
+        if texture_mode != 'blank' and save_texture:
+            f.write(f"map_Kd {os.path.basename(texture_path)}\n")
+        else:
+            # Default material properties if no texture
+            f.write("Ka 0.2 0.2 0.2\n")  # Ambient color
+            f.write("Kd 0.8 0.8 0.8\n")  # Diffuse color
+            f.write("Ks 0.1 0.1 0.1\n")  # Specular color
+            f.write("Ns 10.0\n")         # Specular exponent
+            f.write("d 1.0\n")           # Opacity
+
+    # Write OBJ file
+    with open(obj_path, 'w') as f:
+        f.write(f"mtllib {os.path.basename(mtl_path)}\n\n")
+        
+        # Write vertices
+        for v in vertices:
+            f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+        
+        # Write texture coordinates
+        for uv in uvs:
+            f.write(f"vt {uv[0]:.6f} {1-uv[1]:.6f}\n")  # Flip V coordinate for OBJ format
+        
+        # Write material assignment
+        f.write("\nusemtl material0\n")
+        
+        # Write faces with UV indices
+        for i, face in enumerate(faces):
+            # OBJ indices are 1-based
+            f.write(f"f {face[0]+1}/{face[0]+1} {face[1]+1}/{face[1]+1} {face[2]+1}/{face[2]+1}\n")
+
+    return get_subpath_after_dir(obj_path, "output")
+
+def get_subpath_after_dir(full_path: str, target_dir: str) -> str:
+    try:
+        full_path = os.path.normpath(full_path)
+        full_path = full_path.replace('\\', '/')
+        path_parts = full_path.split('/')
+        try:
+            index = path_parts.index(target_dir)
+            subpath = '/'.join(path_parts[index + 1:])
+            return subpath
+        except ValueError:
+            return path_parts[-1]
+    except Exception as e:
+        print(f"Error processing path in get_subpath_after_dir: {str(e)}")
+        return os.path.basename(full_path)

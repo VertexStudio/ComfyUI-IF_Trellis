@@ -239,6 +239,9 @@ class IF_TrellisImageTo3D:
             else:
                 wireframe_image = None
 
+        if save_obj:
+            obj_path = self.save_obj()
+
         # Clean up the large tensors after we're done using them
         del gaussian_output
         del mesh_output
