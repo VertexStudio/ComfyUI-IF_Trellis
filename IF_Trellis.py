@@ -295,10 +295,10 @@ class IF_TrellisImageTo3D:
         project_name: str,
         render_video: bool,
         save_glb: bool,
-        save_obj: bool,
         save_gaussian: bool,
         save_texture: bool,
         save_wireframe: bool,
+        save_obj: bool,
         masks: Optional[torch.Tensor] = None,
     ) -> Tuple[str, str, torch.Tensor]:
         try:
