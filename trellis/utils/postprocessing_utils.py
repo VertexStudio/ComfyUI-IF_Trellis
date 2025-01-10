@@ -693,12 +693,6 @@ def save_obj(
     debug: bool = False,
     verbose: bool = True,
 ) -> str:
-    """
-    Convert and save the generated asset as OBJ with material and texture files.
-    
-    Returns:
-        str: Path to the saved OBJ file relative to output directory
-    """
     # Set up output paths
     obj_path = os.path.join(out_dir, f"{project_name}.obj")
     mtl_path = os.path.join(out_dir, f"{project_name}.mtl")
@@ -730,6 +724,12 @@ def save_obj(
 
     # UV parameterization
     vertices, faces, uvs = parametrize_mesh(vertices, faces)
+    
+    # Transform UVs to match GLB format
+    # Flip V coordinate and ensure UVs are in [0,1] range
+    uvs = np.copy(uvs)
+    uvs[:, 1] = 1.0 - uvs[:, 1]
+    uvs = np.clip(uvs, 0, 1)
 
     # Generate texture
     texture_np = None
@@ -741,7 +741,7 @@ def save_obj(
         extrinsics_np = [extrinsics[i].cpu().numpy() for i in range(len(extrinsics))]
         intrinsics_np = [intrinsics[i].cpu().numpy() for i in range(len(intrinsics))]
         texture_np = bake_texture(
-            vertices, faces, uvs,
+            vertices, faces, uvs,  # Use transformed UVs
             observations, masks,
             extrinsics_np, intrinsics_np,
             texture_size=texture_size,
@@ -763,22 +763,12 @@ def save_obj(
             logging.error(f"Unexpected texture shape: {texture_np.shape}")
             texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
 
-    # Flip texture vertically for OBJ format compatibility
-    texture_np = np.flipud(texture_np)
+    # Save texture without flipping (already handled in UV coordinates)
     Image.fromarray(texture_np).save(texture_path)
     logging.info(f"Texture saved to {texture_path}")
 
     # Rotate from z-up to y-up
     vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
-
-    # Calculate vertex normals
-    vertex_normals = np.zeros_like(vertices)
-    for face in faces:
-        v0, v1, v2 = vertices[face]
-        normal = np.cross(v1 - v0, v2 - v0)
-        normal = normal / np.linalg.norm(normal)
-        vertex_normals[face] += normal
-    vertex_normals = vertex_normals / np.linalg.norm(vertex_normals, axis=1, keepdims=True)
 
     # Write MTL file
     with open(mtl_path, 'w') as f:
@@ -798,20 +788,15 @@ def save_obj(
         for v in vertices:
             f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
         
-        # Write vertex normals
-        for n in vertex_normals:
-            f.write(f"vn {n[0]:.6f} {n[1]:.6f} {n[2]:.6f}\n")
-        
-        # Write texture coordinates
+        # Write texture coordinates using transformed UVs
         for uv in uvs:
-            f.write(f"vt {uv[0]:.6f} {uv[1]:.6f}\n")  # UV coordinates as-is
+            f.write(f"vt {uv[0]:.6f} {uv[1]:.6f}\n")
         
         f.write("\nusemtl material0\n")
         
-        # Write faces with vertex/texture/normal indices
+        # Write faces
         for face in faces:
-            # OBJ indices are 1-based, include vertex/texture/normal indices
-            f.write(f"f {face[0]+1}/{face[0]+1}/{face[0]+1} {face[1]+1}/{face[1]+1}/{face[1]+1} {face[2]+1}/{face[2]+1}/{face[2]+1}\n")
+            f.write(f"f {face[0]+1}/{face[0]+1} {face[1]+1}/{face[1]+1} {face[2]+1}/{face[2]+1}\n")
 
     return get_subpath_after_dir(obj_path, "output")
 
