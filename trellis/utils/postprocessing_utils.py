@@ -689,22 +689,17 @@ def save_obj(
     fill_holes_max_size: float = 0.04,
     texture_size: int = 1024,
     texture_mode: Literal['fast', 'opt', 'blank'] = 'opt',
-    save_texture: bool = False,
     debug: bool = False,
     verbose: bool = True,
 ) -> str:
     """
     Convert and save the generated asset as OBJ with material and texture files.
-    
-    Returns:
-        str: Path to the saved OBJ file relative to output directory
     """
     # Set up output paths
     obj_path = os.path.join(out_dir, f"{project_name}.obj")
     mtl_path = os.path.join(out_dir, f"{project_name}.mtl")
     texture_path = os.path.join(out_dir, f"{project_name}_texture.png")
     
-    # Create output directory if it doesn't exist
     os.makedirs(out_dir, exist_ok=True)
     
     logging.info(f"Saving OBJ to {obj_path}")
@@ -732,7 +727,7 @@ def save_obj(
     # UV parameterization
     vertices, faces, uvs = parametrize_mesh(vertices, faces)
 
-    # Generate texture
+    # Generate texture using same settings as GLB
     texture_np = None
     if texture_mode != 'blank':
         observations, extrinsics, intrinsics = render_multiview(
@@ -741,23 +736,27 @@ def save_obj(
         masks = [np.any(obs > 0, axis=-1) for obs in observations]
         extrinsics_np = [extrinsics[i].cpu().numpy() for i in range(len(extrinsics))]
         intrinsics_np = [intrinsics[i].cpu().numpy() for i in range(len(intrinsics))]
+        
+        # Use the same baking parameters as in to_glb
         texture_np = bake_texture(
             vertices, faces, uvs,
             observations, masks,
             extrinsics_np, intrinsics_np,
             texture_size=texture_size,
             mode=texture_mode,
-            lambda_tv=0.01,
+            lambda_tv=0.01,  # Match GLB settings
+            near=0.1,        # Match GLB settings
+            far=10.0,        # Match GLB settings
             verbose=verbose
         )
 
-    # Process and save texture
+    # Process texture same way as GLB
     if texture_np is None:
         texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
     else:
-        # Ensure correct shape/dtype
+        # Match GLB texture processing
         if texture_np.ndim == 3 and texture_np.shape[2] in [3, 4]:
-            texture_np = texture_np[..., :3].astype(np.uint8)  # Convert to RGB if RGBA
+            texture_np = texture_np[..., :3].astype(np.uint8)
         elif texture_np.ndim == 2:
             texture_np = np.stack([texture_np]*3, axis=-1).astype(np.uint8)
         elif texture_np.ndim == 3 and texture_np.shape[2] == 1:
@@ -766,24 +765,29 @@ def save_obj(
             logging.error(f"Unexpected texture shape: {texture_np.shape}")
             texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
 
-    # Save texture
+    # Match GLB texture inpainting
+    # Fill holes in texture using same method as GLB
+    mask = np.zeros((texture_size, texture_size), dtype=np.uint8)
+    cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
+    texture_np = cv2.inpaint(texture_np, mask, 3, cv2.INPAINT_TELEA)
+
+    # Save the processed texture
     Image.fromarray(texture_np).save(texture_path)
     logging.info(f"Texture saved to {texture_path}")
 
-    # Rotate from z-up to y-up
+    # Rotate from z-up to y-up (same as GLB)
     vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
 
-    # Write MTL file
+    # Write MTL file with PBR-like material properties to match GLB
     with open(mtl_path, 'w') as f:
         f.write("newmtl material0\n")
-        # Always reference the texture file since we're now always saving it
         f.write(f"map_Kd {os.path.basename(texture_path)}\n")
-        # Add some default material properties as fallback
-        f.write("Ka 0.2 0.2 0.2\n")  # Ambient color
-        f.write("Kd 0.8 0.8 0.8\n")  # Diffuse color
-        f.write("Ks 0.1 0.1 0.1\n")  # Specular color
-        f.write("Ns 10.0\n")         # Specular exponent
-        f.write("d 1.0\n")           # Opacity
+        # Match GLB PBR material properties as closely as possible in MTL
+        f.write("Ka 1.0 1.0 1.0\n")    # Ambient color - full white to match GLB
+        f.write("Kd 1.0 1.0 1.0\n")    # Diffuse color - full white to match GLB
+        f.write("Ks 0.0 0.0 0.0\n")    # No specular to match GLB roughness=1.0
+        f.write("Ns 0.0\n")            # No specular exponent
+        f.write("d 1.0\n")             # Full opacity
 
     # Write OBJ file
     with open(obj_path, 'w') as f:
@@ -793,19 +797,18 @@ def save_obj(
         for v in vertices:
             f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
         
-        # Write texture coordinates
+        # Write texture coordinates (flipping V to match GLB UV orientation)
         for uv in uvs:
-            f.write(f"vt {uv[0]:.6f} {1-uv[1]:.6f}\n")  # Flip V coordinate for OBJ format
+            f.write(f"vt {uv[0]:.6f} {1-uv[1]:.6f}\n")
         
-        # Write material assignment
         f.write("\nusemtl material0\n")
         
         # Write faces with UV indices
         for face in faces:
-            # OBJ indices are 1-based
             f.write(f"f {face[0]+1}/{face[0]+1} {face[1]+1}/{face[1]+1} {face[2]+1}/{face[2]+1}\n")
 
     return get_subpath_after_dir(obj_path, "output")
+
 def get_subpath_after_dir(full_path: str, target_dir: str) -> str:
     try:
         full_path = os.path.normpath(full_path)
