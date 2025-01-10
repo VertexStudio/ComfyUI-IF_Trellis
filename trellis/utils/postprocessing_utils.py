@@ -426,7 +426,6 @@ def create_wireframe_texture(
             texture = np.array(img)
     return texture
 
-
 def to_glb(
     app_rep: Union[Strivec, Gaussian],
     mesh: MeshExtractResult,
@@ -725,7 +724,7 @@ def save_obj(
     # UV parameterization
     vertices, faces, uvs = parametrize_mesh(vertices, faces)
     
-    # Transform UVs to match GLB format
+    # Transform UVs to match OBJ format
     # Flip V coordinate and ensure UVs are in [0,1] range
     uvs = np.copy(uvs)
     uvs[:, 1] = 1.0 - uvs[:, 1]
