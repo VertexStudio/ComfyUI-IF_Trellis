@@ -703,6 +703,10 @@ def save_obj(
     obj_path = os.path.join(out_dir, f"{project_name}.obj")
     mtl_path = os.path.join(out_dir, f"{project_name}.mtl")
     texture_path = os.path.join(out_dir, f"{project_name}_texture.png")
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(out_dir, exist_ok=True)
+    
     logging.info(f"Saving OBJ to {obj_path}")
     logging.info(f"Saving MTL to {mtl_path}")
     logging.info(f"Saving texture to {texture_path}")
@@ -711,7 +715,7 @@ def save_obj(
     vertices = mesh.vertices.cpu().numpy()
     faces = mesh.faces.cpu().numpy()
     
-    # Postprocess geometry using the same function as in to_glb
+    # Postprocess geometry
     vertices, faces = postprocess_mesh(
         vertices, faces,
         simplify=simplify > 0,
@@ -728,8 +732,9 @@ def save_obj(
     # UV parameterization
     vertices, faces, uvs = parametrize_mesh(vertices, faces)
 
-    # Generate texture if not "blank"
-    if texture_mode != 'blank' and save_texture:
+    # Generate texture
+    texture_np = None
+    if texture_mode != 'blank':
         observations, extrinsics, intrinsics = render_multiview(
             app_rep, resolution=1024, nviews=100
         )
@@ -746,40 +751,39 @@ def save_obj(
             verbose=verbose
         )
 
-        if texture_np is None:
-            texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
+    # Process and save texture
+    if texture_np is None:
+        texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
+    else:
+        # Ensure correct shape/dtype
+        if texture_np.ndim == 3 and texture_np.shape[2] in [3, 4]:
+            texture_np = texture_np[..., :3].astype(np.uint8)  # Convert to RGB if RGBA
+        elif texture_np.ndim == 2:
+            texture_np = np.stack([texture_np]*3, axis=-1).astype(np.uint8)
+        elif texture_np.ndim == 3 and texture_np.shape[2] == 1:
+            texture_np = np.concatenate([texture_np]*3, axis=2).astype(np.uint8)
         else:
-            # Ensure correct shape/dtype
-            if texture_np.ndim == 3 and texture_np.shape[2] in [3, 4]:
-                texture_np = texture_np[..., :3].astype(np.uint8)  # Convert to RGB if RGBA
-            elif texture_np.ndim == 2:
-                texture_np = np.stack([texture_np]*3, axis=-1).astype(np.uint8)
-            elif texture_np.ndim == 3 and texture_np.shape[2] == 1:
-                texture_np = np.concatenate([texture_np]*3, axis=2).astype(np.uint8)
-            else:
-                logging.error(f"Unexpected texture shape: {texture_np.shape}")
-                texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
+            logging.error(f"Unexpected texture shape: {texture_np.shape}")
+            texture_np = np.ones((texture_size, texture_size, 3), dtype=np.uint8) * 255
 
-        # Save texture
-        if save_texture:
-            Image.fromarray(texture_np).save(texture_path)
-            logging.info(f"Texture saved to {texture_path}")
+    # Save texture
+    Image.fromarray(texture_np).save(texture_path)
+    logging.info(f"Texture saved to {texture_path}")
 
-    # Rotate from z-up to y-up (same as in to_glb)
+    # Rotate from z-up to y-up
     vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
 
     # Write MTL file
     with open(mtl_path, 'w') as f:
         f.write("newmtl material0\n")
-        if texture_mode != 'blank' and save_texture:
-            f.write(f"map_Kd {os.path.basename(texture_path)}\n")
-        else:
-            # Default material properties if no texture
-            f.write("Ka 0.2 0.2 0.2\n")  # Ambient color
-            f.write("Kd 0.8 0.8 0.8\n")  # Diffuse color
-            f.write("Ks 0.1 0.1 0.1\n")  # Specular color
-            f.write("Ns 10.0\n")         # Specular exponent
-            f.write("d 1.0\n")           # Opacity
+        # Always reference the texture file since we're now always saving it
+        f.write(f"map_Kd {os.path.basename(texture_path)}\n")
+        # Add some default material properties as fallback
+        f.write("Ka 0.2 0.2 0.2\n")  # Ambient color
+        f.write("Kd 0.8 0.8 0.8\n")  # Diffuse color
+        f.write("Ks 0.1 0.1 0.1\n")  # Specular color
+        f.write("Ns 10.0\n")         # Specular exponent
+        f.write("d 1.0\n")           # Opacity
 
     # Write OBJ file
     with open(obj_path, 'w') as f:
@@ -797,12 +801,11 @@ def save_obj(
         f.write("\nusemtl material0\n")
         
         # Write faces with UV indices
-        for i, face in enumerate(faces):
+        for face in faces:
             # OBJ indices are 1-based
             f.write(f"f {face[0]+1}/{face[0]+1} {face[1]+1}/{face[1]+1} {face[2]+1}/{face[2]+1}\n")
 
     return get_subpath_after_dir(obj_path, "output")
-
 def get_subpath_after_dir(full_path: str, target_dir: str) -> str:
     try:
         full_path = os.path.normpath(full_path)
