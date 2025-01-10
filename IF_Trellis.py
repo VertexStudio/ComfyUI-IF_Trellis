@@ -252,7 +252,6 @@ class IF_TrellisImageTo3D:
                 texture_size=self.texture_size,
                 texture_mode=self.texture_mode,
                 save_texture=self.save_texture and self.texture_mode != 'blank',
-                texture_path=texture_path,
                 verbose=True
             )
 
