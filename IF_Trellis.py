@@ -219,7 +219,7 @@ class IF_TrellisImageTo3D:
             glb_path = get_subpath_after_dir(glb_path, "output")
             full_glb_path = os.path.abspath(glb_path)
             logger.info(f"Full GLB path: {full_glb_path}, Processed GLB path: {glb_path}")
-
+            logger.info(f"Wireframe path: {wireframe_path}")
             # Handle texture image creation
             if self.save_texture and self.texture_mode != 'blank' and texture_path and os.path.exists(texture_path):
                 try:

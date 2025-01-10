@@ -703,6 +703,9 @@ def save_obj(
     obj_path = os.path.join(out_dir, f"{project_name}.obj")
     mtl_path = os.path.join(out_dir, f"{project_name}.mtl")
     texture_path = os.path.join(out_dir, f"{project_name}_texture.png")
+    logging.info(f"Saving OBJ to {obj_path}")
+    logging.info(f"Saving MTL to {mtl_path}")
+    logging.info(f"Saving texture to {texture_path}")
 
     # Convert geometry to numpy
     vertices = mesh.vertices.cpu().numpy()
@@ -760,6 +763,7 @@ def save_obj(
         # Save texture
         if save_texture:
             Image.fromarray(texture_np).save(texture_path)
+            logging.info(f"Texture saved to {texture_path}")
 
     # Rotate from z-up to y-up (same as in to_glb)
     vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
